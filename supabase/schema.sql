@@ -107,6 +107,9 @@ grant execute on function public.claim_dot(text, text, integer, text, text) to s
 alter table public.dot_state enable row level security;
 alter table public.dot_history enable row level security;
 
+grant select on public.dot_state to anon, authenticated, service_role;
+grant select on public.dot_history to anon, authenticated, service_role;
+
 create policy "public can read dot state"
 on public.dot_state for select
 to anon, authenticated
@@ -133,3 +136,64 @@ $$;
 
 revoke all on function public.dot_stats() from public;
 grant execute on function public.dot_stats() to service_role;
+
+-- Visitor presence + lifetime visitor count.
+-- Anonymous IDs are server-issued (set in a cookie) so they never reach the client JS.
+
+create table if not exists public.dot_presence (
+  visitor_id uuid primary key,
+  last_seen_at timestamptz not null default now()
+);
+create index if not exists dot_presence_last_seen_at_idx on public.dot_presence (last_seen_at);
+
+create table if not exists public.dot_visitors (
+  visitor_id uuid primary key,
+  first_seen_at timestamptz not null default now()
+);
+
+alter table public.dot_presence enable row level security;
+alter table public.dot_visitors enable row level security;
+
+-- These tables are server-only. No anon/authenticated policies -> RLS denies them by default.
+revoke all on public.dot_presence from anon, authenticated;
+revoke all on public.dot_visitors from anon, authenticated;
+
+-- Single round-trip: upsert presence, register visitor on first sight, return counts.
+-- expire_seconds defaults to 45 so a caller can tune it.
+create or replace function public.heartbeat(
+  p_visitor_id uuid,
+  p_expire_seconds integer default 45
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  watching_count integer;
+  lifetime_count integer;
+  expire_interval interval := make_interval(secs => greatest(p_expire_seconds, 5));
+begin
+  insert into public.dot_presence (visitor_id, last_seen_at)
+    values (p_visitor_id, now())
+    on conflict (visitor_id) do update set last_seen_at = excluded.last_seen_at;
+
+  insert into public.dot_visitors (visitor_id)
+    values (p_visitor_id)
+    on conflict (visitor_id) do nothing;
+
+  delete from public.dot_presence
+    where last_seen_at < now() - expire_interval;
+
+  select count(*) into watching_count from public.dot_presence;
+  select count(*) into lifetime_count from public.dot_visitors;
+
+  return jsonb_build_object(
+    'watching', watching_count,
+    'visitors_since_launch', lifetime_count
+  );
+end;
+$$;
+
+revoke all on function public.heartbeat(uuid, integer) from public;
+grant execute on function public.heartbeat(uuid, integer) to service_role;

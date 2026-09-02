@@ -51,6 +51,8 @@ export function HomeClient({ initialState, initialHistory, initialStats }: { ini
   });
   const [totalRaised, setTotalRaised] = useState(initialStats.total_raised_cents);
   const [ownerCount, setOwnerCount] = useState(initialStats.owner_count);
+  const [watching, setWatching] = useState(0);
+  const [visitorsSinceLaunch, setVisitorsSinceLaunch] = useState(0);
 
   const nextPrice = state.amount_cents + 100;
 
@@ -87,6 +89,21 @@ export function HomeClient({ initialState, initialHistory, initialStats }: { ini
       } catch {}
     };
     const id = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const heartbeat = async () => {
+      try {
+        const response = await fetch("/api/heartbeat", { method: "POST", cache: "no-store" });
+        if (!response.ok) return;
+        const next = (await response.json()) as { watching?: number; visitors_since_launch?: number };
+        if (typeof next.watching === "number") setWatching(next.watching);
+        if (typeof next.visitors_since_launch === "number") setVisitorsSinceLaunch(next.visitors_since_launch);
+      } catch {}
+    };
+    heartbeat();
+    const id = window.setInterval(heartbeat, 15000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -142,9 +159,27 @@ export function HomeClient({ initialState, initialHistory, initialStats }: { ini
       </section>
 
       <section className="mx-auto max-w-2xl border-t border-black/10 pt-6 pb-10">
-        <div className="mb-6 flex justify-between text-xs">
-          <span>Total raised <strong>{dollars(totalRaised)}</strong></span>
-          <span>Owners <strong>{ownerCount}</strong></span>
+        <div className="mb-8 flex flex-wrap items-stretch justify-center gap-y-3 text-xs sm:flex-nowrap">
+          <div className="flex flex-1 items-center justify-center gap-2 px-4 first:pl-0 last:pr-0 sm:border-r sm:border-black/10 sm:first:pl-0 sm:last:border-r-0 sm:last:pr-0">
+            <span className="text-neutral-500">Paid</span>
+            <strong className="font-semibold tabular-nums">{dollars(totalRaised)}</strong>
+          </div>
+          <div className="flex flex-1 items-center justify-center gap-2 px-4 sm:border-r sm:border-black/10 sm:last:border-r-0 sm:last:pr-0">
+            <span className="text-neutral-500">Owners</span>
+            <strong className="font-semibold tabular-nums">{ownerCount.toLocaleString()}</strong>
+          </div>
+          <div className="flex flex-1 items-center justify-center gap-2 px-4 sm:border-r sm:border-black/10 sm:last:border-r-0 sm:last:pr-0">
+            <span className="relative inline-flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+            </span>
+            <span className="text-neutral-500">Watching</span>
+            <strong className="font-semibold tabular-nums">{watching.toLocaleString()}</strong>
+          </div>
+          <div className="flex flex-1 items-center justify-center gap-2 px-4 sm:border-r sm:border-black/10 sm:last:border-r-0 sm:last:pr-0">
+            <span className="text-neutral-500">Visitors</span>
+            <strong className="font-semibold tabular-nums">{visitorsSinceLaunch.toLocaleString()}</strong>
+          </div>
         </div>
         <div className="space-y-2">
           {history.map((item) => (

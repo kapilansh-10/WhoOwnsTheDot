@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 function required(name: string) {
   const value = process.env[name];
@@ -6,12 +6,17 @@ function required(name: string) {
   return value;
 }
 
+let serverClient: SupabaseClient | undefined;
+
 export function getSupabaseServer() {
-  return createClient(
-    required("NEXT_PUBLIC_SUPABASE_URL"),
-    required("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false, autoRefreshToken: false } },
-  );
+  if (!serverClient) {
+    serverClient = createClient(
+      required("NEXT_PUBLIC_SUPABASE_URL"),
+      required("SUPABASE_SERVICE_ROLE_KEY"),
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+  }
+  return serverClient;
 }
 
 export function getSupabasePublic() {
