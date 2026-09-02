@@ -12,23 +12,74 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
 }
 button, input { font: inherit; }
 a { color: inherit; }
 ::selection { background: #000; color: #fff; }
 
-@keyframes ownership-fade {
-  0% { opacity: .35; transform: scale(.985); }
-  100% { opacity: 1; transform: scale(1); }
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 3px;
+  border-radius: 2px;
 }
-.ownership-changed { animation: ownership-fade .5s ease-out; }
+
+@keyframes ownership-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@keyframes ownership-fade {
+  0% { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes number-flash {
+  0% { opacity: 1; }
+  35% { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+@keyframes row-enter {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
 
 .dot {
-  width: 180px;
-  height: 180px;
+  width: 200px;
+  height: 200px;
   border-radius: 9999px;
   background: #000;
+  transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
 }
+.dot:hover {
+  transform: scale(1.02);
+}
+.dot-owner-changed {
+  animation: ownership-pop 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @media (min-width: 768px) {
-  .dot { width: 260px; height: 260px; }
+  .dot { width: 300px; height: 300px; }
+}
+@media (min-width: 1200px) {
+  .dot { width: 340px; height: 340px; }
+}
+
+.owner-changed { animation: ownership-fade 600ms ease-out; }
+.number-changed { animation: number-flash 700ms ease-out; }
+.row-new { animation: row-enter 600ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .dot:hover { transform: none; }
 }
