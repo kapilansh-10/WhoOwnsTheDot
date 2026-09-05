@@ -47,6 +47,7 @@ security definer
 set search_path = public
 as $$
 declare
+  state_id uuid;
   current_amount integer;
   existing_history_id uuid;
   claimed boolean := false;
@@ -69,32 +70,50 @@ begin
   end if;
 
   -- Serialize all ownership claims so concurrent webhooks cannot lower the price.
-  select amount_cents
-    into current_amount
+  -- Lock the single canonical state row by id (FOR UPDATE) so concurrent
+  -- transactions queue here instead of racing.
+  select id, amount_cents
+    into state_id, current_amount
     from public.dot_state
     order by updated_at desc
     limit 1
     for update;
 
+  if state_id is null then
+    insert into public.dot_state (owner_name, owner_url, amount_cents, dodo_payment_id, dodo_checkout_session_id)
+      values (p_owner_name, p_owner_url, p_amount_cents, p_dodo_payment_id, p_dodo_checkout_session_id)
+      returning id, amount_cents into state_id, current_amount;
+
+    insert into public.dot_history (owner_name, owner_url, amount_cents, dodo_payment_id, dodo_checkout_session_id)
+      values (p_owner_name, p_owner_url, p_amount_cents, p_dodo_payment_id, p_dodo_checkout_session_id)
+      on conflict (dodo_payment_id) do nothing;
+
+    return jsonb_build_object('claimed', true, 'current_amount_cents', current_amount);
+  end if;
+
   if p_amount_cents > current_amount then
+    -- WHERE clause is required (Supabase safeupdate blocks unqualified UPDATEs)
+    -- and pins the write to the exact row we locked above.
     update public.dot_state
       set owner_name = p_owner_name,
           owner_url = p_owner_url,
           amount_cents = p_amount_cents,
           dodo_payment_id = p_dodo_payment_id,
           dodo_checkout_session_id = p_dodo_checkout_session_id,
-          updated_at = now();
+          updated_at = now()
+      where id = state_id;
 
     insert into public.dot_history (owner_name, owner_url, amount_cents, dodo_payment_id, dodo_checkout_session_id)
       values (p_owner_name, p_owner_url, p_amount_cents, p_dodo_payment_id, p_dodo_checkout_session_id)
       on conflict (dodo_payment_id) do nothing;
 
     claimed := true;
+    current_amount := p_amount_cents;
   end if;
 
   return jsonb_build_object(
     'claimed', claimed,
-    'current_amount_cents', (select amount_cents from public.dot_state limit 1)
+    'current_amount_cents', current_amount
   );
 end;
 $$;

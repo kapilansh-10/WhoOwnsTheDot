@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (body?.url && !ownerUrl) return NextResponse.json({ error: "Enter a valid URL or X handle." }, { status: 400 });
 
     const supabase = getSupabaseServer();
-    const { data: state, error } = await supabase.from("dot_state").select("amount_cents").limit(1).single();
+    const { data: state, error } = await supabase.from("dot_state").select("amount_cents").order("updated_at", { ascending: false }).limit(1).single();
     if (error) return NextResponse.json({ error: "Could not read the current dot." }, { status: 500 });
 
     const expectedAmount = state.amount_cents + 100;
