@@ -75,6 +75,19 @@ export function HomeClient({
   const newestHistoryId = history[0]?.id;
   const isNewestFresh = !!newestHistoryId && !seenHistoryIds.has(newestHistoryId);
 
+  // Clean Dodo return params (owned, payment_id, status, email, ...) so the
+  // final visible URL is always "/". Ownership is resolved via Supabase polling
+  // below, never from URL params. Initial `confirming` above already captured
+  // `owned=1` before this cleanup runs.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("owned") === "1") {
+        window.history.replaceState(null, "", "/");
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     function applyResult(nextState: DotState) {
       const pending = readPendingCheckout();
@@ -91,7 +104,8 @@ export function HomeClient({
         setConfirming(false);
         window.localStorage.removeItem(pendingKey);
       } else {
-        setConfirming(new URLSearchParams(window.location.search).get("owned") === "1");
+        // URL is already cleaned to "/"; keep confirming until Supabase confirms.
+        setConfirming(true);
       }
     }
 
