@@ -32,14 +32,15 @@ export async function POST(request: Request) {
   if (payment.status && payment.status !== "succeeded") {
     return NextResponse.json({ received: true });
   }
-  if (payment.currency !== "USD") {
-    return NextResponse.json({ error: "Unexpected payment currency." }, { status: 400 });
-  }
-
   const ownerName = cleanName(metadataValue(payment.metadata, "owner_name"));
   const ownerUrl = cleanUrl(metadataValue(payment.metadata, "owner_url"));
   const expectedAmount = Number(metadataValue(payment.metadata, "expected_amount_cents"));
-  const paidAmount = payment.total_amount;
+  // Validate against Dodo's USD settlement amount, not the customer's localized
+  // charge (total_amount/currency can be e.g. INR 19642 for a $2 USD settlement).
+  const paidAmount = payment.settlement_amount;
+  const paidCurrency = payment.settlement_currency;
+  const customerAmount = payment.total_amount;
+  const customerCurrency = payment.currency;
   const paymentId = payment.payment_id ?? null;
   const checkoutSessionId = payment.checkout_session_id ?? null;
 
@@ -54,8 +55,12 @@ export async function POST(request: Request) {
   if (metadataValue(payment.metadata, "owner_url") && !ownerUrl) {
     return NextResponse.json({ error: "Invalid owner URL." }, { status: 400 });
   }
-  if (paidAmount !== expectedAmount) {
-    console.error("Dodo webhook payment amount mismatch", { paymentId, paidAmount, expectedAmount });
+  if (paidCurrency !== "USD") {
+    console.error("Dodo webhook unexpected settlement currency", { paymentId, paidCurrency, customerCurrency, customerAmount, expectedAmount });
+    return NextResponse.json({ error: "Unexpected settlement currency." }, { status: 400 });
+  }
+  if (!Number.isInteger(paidAmount) || paidAmount !== expectedAmount) {
+    console.error("Dodo webhook payment amount mismatch", { paymentId, paidAmount, paidCurrency, customerAmount, customerCurrency, expectedAmount });
     return NextResponse.json({ error: "Payment amount mismatch." }, { status: 400 });
   }
 
