@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { dotImagePublicUrl } from "@/lib/dot-image";
 import { getSupabaseServer } from "@/lib/supabase";
 import { dollars, relativeTime } from "@/lib/format";
 import type { DotHistory } from "@/lib/types";
@@ -15,7 +16,10 @@ export default async function HistoryPage() {
       <div className="mx-auto max-w-2xl py-20">
         <h1 className="text-3xl font-semibold tracking-tight">Everyone who owned the dot</h1>
         <div className="mt-10 divide-y divide-black/10 border-y border-black/10">
-          {history.map((item) => <div key={item.id} className="flex justify-between gap-4 py-4 text-sm"><span>{dollars(item.amount_cents)} · {item.owner_url ? <a className="underline" href={item.owner_url} target="_blank" rel="noreferrer">{item.owner_name}</a> : item.owner_name}</span><span className="text-neutral-400">{relativeTime(item.created_at)}</span></div>)}
+          {history.map((item) => {
+            const itemImageUrl = dotImagePublicUrl(item.image_url);
+            return <div key={item.id} className="flex justify-between gap-4 py-4 text-sm"><span className="flex min-w-0 items-center gap-2">{itemImageUrl ? <img src={itemImageUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" loading="lazy" /> : null}<span>{dollars(item.amount_cents)} · {item.owner_url ? <a className="underline" href={item.owner_url} target="_blank" rel="noreferrer">{item.owner_name}</a> : item.owner_name}</span></span><span className="text-neutral-400">{relativeTime(item.created_at)}</span></div>;
+          })}
           {!history.length && <p className="py-6 text-sm text-neutral-500">No owners yet.</p>}
         </div>
       </div>

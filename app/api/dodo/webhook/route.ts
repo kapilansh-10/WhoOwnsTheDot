@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { verifyDodoWebhook } from "@/lib/dodo";
 import { getSupabaseServer } from "@/lib/supabase";
 import { cleanName, cleanUrl } from "@/lib/validation";
+import { DOT_IMAGES_BUCKET, isValidStagedImagePath } from "@/lib/dot-image";
 
 export const runtime = "nodejs";
 
@@ -76,6 +77,43 @@ export async function POST(request: Request) {
   if (error) {
     console.error("Ownership claim failed", { paymentId, paidAmount, expectedAmount, message: error.message });
     return NextResponse.json({ error: "Could not claim the dot." }, { status: 500 });
+  }
+
+  // Promote the staged owner image ONLY when this payment actually won the
+  // dot. Scoped by dodo_payment_id so duplicate/stale deliveries can never
+  // overwrite the current owner's image. Image is optional: a missing staged
+  // file never fails the (already successful) ownership claim.
+  const stagedImagePath = metadataValue(payment.metadata, "image_path");
+  const claimResult = data as { claimed?: boolean } | null;
+  if (stagedImagePath !== null && claimResult?.claimed === true) {
+    if (!isValidStagedImagePath(stagedImagePath)) {
+      console.error("Dodo webhook invalid image_path metadata", { paymentId });
+    } else {
+      const { data: stagedFile, error: stagedError } = await supabase.storage
+        .from(DOT_IMAGES_BUCKET)
+        .download(stagedImagePath);
+      if (stagedError || !stagedFile) {
+        console.error("Dodo webhook staged image missing, skipping promotion", {
+          paymentId,
+          stagedImagePath,
+        });
+      } else {
+        const { error: stateImageError } = await supabase
+          .from("dot_state")
+          .update({ image_url: stagedImagePath })
+          .eq("dodo_payment_id", paymentId);
+        if (stateImageError) {
+          console.error("Owner image promotion (state) failed", { paymentId, message: stateImageError.message });
+        }
+        const { error: historyImageError } = await supabase
+          .from("dot_history")
+          .update({ image_url: stagedImagePath })
+          .eq("dodo_payment_id", paymentId);
+        if (historyImageError) {
+          console.error("Owner image promotion (history) failed", { paymentId, message: historyImageError.message });
+        }
+      }
+    }
   }
 
   return NextResponse.json({ received: true, result: data });

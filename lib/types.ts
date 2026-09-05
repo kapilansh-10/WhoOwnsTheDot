@@ -5,6 +5,7 @@ export type DotState = {
   amount_cents: number;
   dodo_payment_id: string | null;
   dodo_checkout_session_id: string | null;
+  image_url: string | null;
   updated_at: string;
 };
 
@@ -15,5 +16,6 @@ export type DotHistory = {
   amount_cents: number;
   dodo_payment_id: string | null;
   dodo_checkout_session_id: string | null;
+  image_url: string | null;
   created_at: string;
 };

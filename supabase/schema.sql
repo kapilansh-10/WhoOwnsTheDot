@@ -7,6 +7,7 @@ create table if not exists public.dot_state (
   amount_cents integer not null default 0 check (amount_cents >= 0),
   dodo_payment_id text unique,
   dodo_checkout_session_id text unique,
+  image_url text,
   updated_at timestamptz not null default now()
 );
 
@@ -17,6 +18,7 @@ create table if not exists public.dot_history (
   amount_cents integer not null check (amount_cents > 0),
   dodo_payment_id text unique not null,
   dodo_checkout_session_id text unique,
+  image_url text,
   created_at timestamptz not null default now()
 );
 
@@ -125,6 +127,22 @@ grant execute on function public.claim_dot(text, text, integer, text, text) to s
 
 alter table public.dot_state enable row level security;
 alter table public.dot_history enable row level security;
+
+alter table public.dot_state add column if not exists image_url text;
+alter table public.dot_history add column if not exists image_url text;
+
+-- Owner images live in Supabase Storage (binary never touches Postgres).
+-- Bucket is public-read; writes go through the service_role key only
+-- (server routes), so no anon/authenticated write policy is created.
+insert into storage.buckets (id, name, public)
+  values ('dot-images', 'dot-images', true)
+  on conflict (id) do nothing;
+
+drop policy if exists "public read dot images" on storage.objects;
+create policy "public read dot images"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'dot-images');
 
 grant select on public.dot_state to anon, authenticated, service_role;
 grant select on public.dot_history to anon, authenticated, service_role;

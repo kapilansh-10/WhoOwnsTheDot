@@ -15,6 +15,7 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "sharp": "^0.35.4",
     "standardwebhooks": "^1.1.1"
   },
   "devDependencies": {

@@ -31,6 +31,7 @@ export async function createDotCheckout(params: {
   amountCents: number;
   ownerName: string;
   ownerUrl: string | null;
+  imagePath: string | null;
   returnUrl: string;
   cancelUrl: string;
 }) {
@@ -46,6 +47,9 @@ export async function createDotCheckout(params: {
       owner_name: params.ownerName,
       owner_url: params.ownerUrl ?? "",
       expected_amount_cents: String(params.amountCents),
+      // Server-validated staged storage path (e.g. "staged/<uuid>.webp") or "".
+      // The webhook promotes this to the owner only after successful payment.
+      image_path: params.imagePath ?? "",
     },
     return_url: params.returnUrl,
     cancel_url: params.cancelUrl,

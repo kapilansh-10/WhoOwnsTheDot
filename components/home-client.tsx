@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { dotImagePublicUrl } from "@/lib/dot-image";
 import { dollars, relativeTime } from "@/lib/format";
 import type { DotHistory, DotState } from "@/lib/types";
 
@@ -55,8 +56,31 @@ export function HomeClient({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageError, setImageError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+  function pickImage(file: File | null) {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    setImageFile(null);
+    setImageError("");
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name)) {
+      setImageError("Only JPG, PNG, or WebP images are allowed.");
+      return;
+    }
+    if (file.size <= 0 || file.size > MAX_IMAGE_BYTES) {
+      setImageError("Image must be 5 MB or smaller.");
+      return;
+    }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
   const [owned, setOwned] = useState(false);
   const [lost, setLost] = useState(false);
   const [confirming, setConfirming] = useState(() => {
@@ -114,7 +138,7 @@ export function HomeClient({
         const response = await fetch("/api/state", { cache: "no-store" });
         if (!response.ok) return;
         const next = await response.json();
-        setState((previous: DotState) => (next.state.amount_cents !== previous.amount_cents ? next.state : previous));
+        setState((previous: DotState) => (next.state.amount_cents !== previous.amount_cents || next.state.image_url !== previous.image_url ? next.state : previous));
         setHistory(next.history);
         setTotalRaised(next.stats.total_raised_cents);
         setOwnerCount(next.stats.owner_count);
@@ -144,10 +168,21 @@ export function HomeClient({
   async function checkout() {
     setBusy(true); setError("");
     try {
+      // Stage the optional image first; the path below is server-generated and
+      // is only promoted to the owner after the webhook claims the dot.
+      let imagePath: string | null = null;
+      if (imageFile) {
+        const form = new FormData();
+        form.append("image", imageFile);
+        const uploadResponse = await fetch("/api/upload", { method: "POST", body: form });
+        const uploadPayload = await uploadResponse.json();
+        if (!uploadResponse.ok) throw new Error(uploadPayload.error || "Could not upload image.");
+        imagePath = uploadPayload.path;
+      }
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, url }),
+        body: JSON.stringify({ name, url, imagePath }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not start checkout.");
@@ -163,7 +198,8 @@ export function HomeClient({
   }
 
   function openCheckout() {
-    setName(""); setUrl(""); setError(""); setOpen(true);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setName(""); setUrl(""); setImageFile(null); setImagePreview(null); setImageError(""); setError(""); setOpen(true);
   }
 
   const ownerHref = safeExternalUrl(state.owner_url);
@@ -179,7 +215,7 @@ export function HomeClient({
       </header>
 
       <section className="flex min-h-[calc(100vh-220px)] flex-col items-center justify-center py-12 text-center md:py-16">
-        <DotFrame key={state.owner_name} />
+        <DotFrame key={state.owner_name} imageUrl={dotImagePublicUrl(state.image_url)} />
 
         <div className="mt-10 flex flex-col items-center md:mt-12">
           <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-neutral-500">
@@ -251,6 +287,7 @@ export function HomeClient({
           <ul className="divide-y divide-black/[0.06] border-y border-black/[0.06]">
             {history.map((item) => {
               const itemHref = safeExternalUrl(item.owner_url);
+              const itemImageUrl = dotImagePublicUrl(item.image_url);
               const isNew = item.id === newestHistoryId && isNewestFresh;
               return (
                 <li
@@ -258,6 +295,9 @@ export function HomeClient({
                   className={`flex items-center justify-between gap-4 py-3.5 text-sm ${isNew ? "row-new" : ""}`}
                 >
                   <div className="flex min-w-0 items-center gap-4">
+                    {itemImageUrl ? (
+                      <img src={itemImageUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" loading="lazy" />
+                    ) : null}
                     <span className="w-12 shrink-0 text-right text-[13px] font-semibold tabular-nums tracking-tight text-black">
                       {dollars(item.amount_cents)}
                     </span>
@@ -322,6 +362,20 @@ export function HomeClient({
             <input autoFocus maxLength={32} value={name} onChange={(e) => setName(e.target.value)} className="mt-2 w-full border border-black px-3 py-3 outline-none focus:ring-1 focus:ring-black" placeholder="alice" />
             <label className="mt-4 block text-xs font-medium">Optional link</label>
             <input maxLength={300} value={url} onChange={(e) => setUrl(e.target.value)} className="mt-2 w-full border border-black px-3 py-3 outline-none focus:ring-1 focus:ring-black" placeholder="@alice or https://…" />
+            <label className="mt-4 block text-xs font-medium">Optional picture</label>
+            <div className="mt-2 flex items-center gap-3">
+              {imagePreview ? (
+                <img src={imagePreview} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+              ) : null}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+                className="w-full text-xs text-neutral-500 file:mr-3 file:border file:border-black file:bg-white file:px-3 file:py-2 file:text-xs file:font-medium hover:file:bg-black hover:file:text-white"
+              />
+            </div>
+            <p className="mt-1 text-[10px] leading-4 text-neutral-400">JPG, PNG, or WebP, up to 5 MB. Shown inside the dot.</p>
+            {imageError && <p className="mt-2 text-xs text-red-600">{imageError}</p>}
             {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
             <button disabled={busy || name.trim().length < 2} onClick={checkout} className="mt-6 w-full bg-black px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40">{busy ? "Opening checkout…" : `Pay ${dollars(nextPrice)}`}</button>
             <p className="mt-3 text-[10px] leading-4 text-neutral-400">No refunds. Your ownership is public.</p>
@@ -332,8 +386,13 @@ export function HomeClient({
   );
 }
 
-function DotFrame() {
-  return <div className="dot dot-owner-changed" aria-label="The dot" />;
+function DotFrame({ imageUrl }: { imageUrl: string | null }) {
+  if (!imageUrl) return <div className="dot dot-owner-changed" aria-label="The dot" />;
+  return (
+    <div className="dot dot-owner-changed overflow-hidden" aria-label="The dot">
+      <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+    </div>
+  );
 }
 
 function StatCell({
